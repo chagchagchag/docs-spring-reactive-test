@@ -1,6 +1,8 @@
 {
   "index": "Introduction",
   "unit-test": "유닛 테스트",
+  "mockito-test": "Mockito 테스트",
+  "reactor-test": "Reactor 테스트",
   "slice-test": "슬라이스 테스트",
   "integration-test": "통합 테스트",
   "contact": {
