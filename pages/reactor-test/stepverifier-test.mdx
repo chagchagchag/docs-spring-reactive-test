@@ -320,13 +320,67 @@ public void TEST_STEP_ON_NEXT_EXAMPLE_1(){
 
 ### Context, ContextExpectations
 
+StepVerifier 를 이용해서 Flux, Mono 등이 수행되는 퍼블리셔가 수행되는 중인 Context 를 테스트합니다. 코틀린 문서에서도 설명했지만, Context 는 자바의 ThreadLocal 처럼 실행 문맥입니다. 다만 webflux 의 경우 비동기 논블로킹이기 때문에 중간에 실행되는 스레드가 바뀔 수 있습니다. 따라서 Spring Webflux 에서는 ThreadLocal 을 사용이 불가능합니다.<br/>
+
+webflux 를 이용해서 Publisher 프로그래밍을 작성한다고 하더라도 특정 시점의 실행 문맥에서는 Context 를 통해 값을 공유해야 할 필요가 있습니다. 그렇지 않으면 과도한 flatMap 지옥에 빠질 수 있기 때문입니다.<br/>
+
+ContextExpectation 은 이러한 Context 를 검증할 때 사용하는 객체입니다.<br/>
+
+ContextExpectation 에서 제공하는 메서드 들은 아래와 같습니다.
+
+- hasKey(Object key) : Context 내에 특정한 key 가 존재하는지 체크합니다.
+- hasSize(int size) : Context 의 size가 특정한 size 가 맞는지 체크합니다.
+- contains(Object key, Object value) : Context 에 특정 key,value 쌍이 존재하는지 체크합니다.
+- containsAllOf(Context other) : 다른 Context 까지 뒤져서 인자로 전달받은 Map 의 모든 key,value 쌍이 존재하는지 검사합니다.
+- containsOnly(Context other) : 다른 Context 를 인자로 받아서 이 Context 내의 Key,Value 들이 실제로 현재 Context 내에 모두 존재하는지 검사합니다. 
+- assertThat(Consumer\<Context\> consumer) : Consumer 타입의 람다를 통해 Assertion 을 수행합니다.
+- matches(Predicate\<Context\> predicate) : Context 에 대해 Predicate 를 통해 특정 조건식에 해당하는지 검사를 수행합니다.
+- then() : ContextExpectations 를 종료하고, Step 으로 복귀합니다.
+
+<br/>
 
 
 
+e.g.
 
+- 설명은 생략합니다.
 
+```java
+@Test
+public void CONTEXT_EXAMPLE(){
+    // 1)
+    Flux<Integer> numbers = Flux.range(0,11);
+    StepVerifier.create(numbers)
+        .expectNoAccessibleContext()
+        .expectNextCount(11)
+        .verifyComplete();
 
+    // 2) Context 를 Flux 에 주입
+    Flux<Integer> numbersWithCtx1 = Flux.range(0,11)
+        .contextWrite(Context.of("Hello", "World"));
+    StepVerifier.create(numbersWithCtx1)
+        .expectAccessibleContext()
+        .contains("Hello", "World")
+        .then()
+        .expectNextCount(11)
+        .verifyComplete();
 
+    // 3) Context 를 StepVerifier 에 주입
+    Flux<Integer> numbersWithoutCtx = Flux.range(0,11);
+
+    var option = StepVerifierOptions.create()
+            .withInitialContext(Context.of("Hello", "World"));
+
+    StepVerifier.create(numbersWithoutCtx, option)
+        .expectAccessibleContext()
+        .contains("Hello", "World")
+        .then()
+        .expectNextCount(11)
+        .verifyComplete();
+}
+```
+
+<br/>
 
 
 
