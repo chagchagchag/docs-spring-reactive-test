@@ -59,6 +59,32 @@ i=5 일 때 RuntimeException 을 내고 있습니다. 만약 RuntimeException �
 
 
 
+## 3\) Delay 및 Timeout 이 적용된 코드 테스트시 어려움
+
+```java
+@Test
+public void TEST_FLUX_3_HEAVY_JOB_TEST(){
+    Flux<Integer> numbers = Flux.range(0, 10)
+        .delayElements(Duration.ofSeconds(2));
+
+    var expectedList = IntStream.range(0, 10)
+        .boxed()
+        .collect(Collectors.toList());
+
+    var actualList = numbers.collectList().block();
+
+    Assertions.assertIterableEquals(expectedList, actualList);
+}
+```
+
+한 개의 요소를 순회할 때마다 2초가 걸리며 10개의 요소를 순회합니다. 이렇게 되면 테스트 시에 20초의 시간이 소요됩니다. 이렇게 되면 테스트의 FIRST 원칙 중 F (Fast) 원칙을 위배하게 됩니다.<br/>
+
+어떤 로직이 10분마다 한번씩 실행되는지를 테스트해보고 싶은 경우에는 어떻게 해야할까요? 또는 어떤 메일 발송 로직이 1일마다 한번씩 실행됨을 보장하려면 어떻게 해야 할까요? StepVerifier 의 withVirtualTime 을 사용하면 이런 테스트에 대해서 유연하게 대응이 가능해집니다.<br/>
+
+<br/>
+
+
+
 
 
 
