@@ -1,0 +1,65 @@
+## StepVerifier 없이 테스트할 경우
+
+StepVerifier 없이 테스트할 경우의 단점들에 대해 알아봅니다.<br/>
+
+
+
+## 1\) 데이터를 즉시 로딩하는 테스트
+
+```java
+@Test
+public void TEST_FLUX_1_BY_TO_LIST_BLOCK(){
+    Flux<Integer> numbers = Flux.create(sink -> {
+      for(int i=0; i<10; i++) sink.next(i);
+      sink.complete();
+    });
+
+    var expectedList = IntStream.range(0, 10)
+        .boxed()
+        .collect(Collectors.toList());
+
+    var actualList = numbers.collectList().block();
+
+    Assertions.assertIterableEquals(expectedList, actualList);
+}
+```
+
+Stream 과 Iterable 의 차이점, 단점 등에서 자주 언급되듯, Iterable 은 모든 데이터를 한번에 전달해줍니다. 반면 Stream 은 데이터를 게으르게 전달해주며, 한번에 데이터를 모아서 전달해주는 방식이 아닙니다. Flux 역시도 데이터를 한번에 모아서 Publish 하는 Publisher 가 아닙니다.<br/>
+
+따라서 위의 코드 처럼 Flux 를 Iterable 로 변환해서 테스트하는 것은 비효율적입니다. 틀린 코드는 아니지만 Flux 의 장점을 활용하지 못한 코드입니다. <br/>
+
+<br/>
+
+
+
+## 2\) 예외 발생 직전의 요건을 테스트하기 쉽지 않다
+
+```java
+@Test
+public void TEST_FLUX_2_THROW_EXCEPTION_STATEMENT(){
+    Flux<Integer> numbers = Flux.create(sink -> {
+      for(int i=0; i<10; i++) {
+        sink.next(i);
+        if(i==5) sink.error(new RuntimeException("잠깐 멈춰봐요"));
+      }
+      sink.complete();
+    });
+
+    Assertions.assertThrows(RuntimeException.class, () -> {
+      numbers.collectList().block();
+    });
+}
+```
+
+i=5 일 때 RuntimeException 을 내고 있습니다. 만약 RuntimeException 이 발생하기 전에 i=4 일때 어떤 값이 있었는지, 어떤 데이터였는지 요건을 파악하고 싶다면 어떻게 해야 할까요?  테스트를 위해서 Flux 의 바깥에 조건변수를 두거나 여러가지 제어 구문을 적용해야만 할 것입니다.<br/>
+
+위의 코드는 정상적인 코드이지만, Webflux 의 StepVerifier 를 활용한다면 조금 더 유연한 테스트가 가능해집니다.<br/>
+
+<br/>
+
+
+
+
+
+
+

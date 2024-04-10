@@ -448,6 +448,14 @@ public void ASSERT_TIMEOUT_PREEMPTIVELY(){
     });
     Assertions.assertTrue(externalResult);
 }
+
+// @TestMustFail 은 아래와 같이 정의해두었습니다.
+@Target(ElementType.METHOD)
+@Retention(RetentionPolicy.RUNTIME)
+@Test
+public @interface TestMustFail {
+
+}
 ```
 
 <br/>
