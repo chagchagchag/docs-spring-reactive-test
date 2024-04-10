@@ -252,6 +252,226 @@ public void ASSERT_TEST_MUST_FAIL(){
 }
 ```
 
+<br/>
+
+
+
+## assertAll
+
+특정 단언문들을 한꺼번에 실행하고 싶을때가 있습니다. 또는 즉시 로딩하는 연산대신 lazy loading 을 하는 연산을 수행하고 싶을 경우가 있습니다. 이런 경우 `junit.jupiter` 의 `Executable` 을 활용해서 아래와 같이 Assertions.assertAll(Executable executables...) 을 수행하면 됩니다.
+
+```java
+@Test
+public void ASSERT_ALL(){
+    Assertions.assertAll(
+        () -> {Assertions.assertTrue(true);},
+        () -> {Assertions.assertTrue(1 > 0);},
+        () -> {Assertions.assertTrue(List.of(1,2,3).size() == 3);}
+    );
+
+    Stream<Executable> stream = Stream.of(
+        () -> {Assertions.assertTrue(true);},
+        () -> {Assertions.assertTrue(1 > 0);},
+        () -> {Assertions.assertTrue(List.of(1,2,3).size() == 3);}
+    );
+    Assertions.assertAll(stream);
+}
+```
+
+<br/>
+
+
+
+## assertThrows, assertThrowsExactly
+
+특정 비즈니스 로직의 유효성 체크나, 요건이 성립하지 않는 경우를 테스트하기 위해 Exception 을 내는 테스트 케이스를 해야 할 경우가 많습니다. 또한 비즈니스 로직에 따라서 Exception 의 종류도 다양하게 정의하고 여러 가지 경우의 수로 나누어서 여러가지 Exception 을 throw 합니다. <br/>
+
+이런 경우에 대한 테스트는 `assertThrows`, `assertThrowsExactly` 를 사용합니다.<br/>
+
+```java
+@Test
+public void ASSERT_THROWS_ASSERT_THROWS_EXACTLY(){
+    Assertions.assertThrows(
+        IllegalStateException.class,
+        () -> {
+          throw new IllegalStateException("예외가 발생했어요");
+        }
+    );
+
+    Assertions.assertThrows(
+        RuntimeException.class, // IllegalArgumentException 은 RuntimeException 의 한 종류로 판단
+        () -> {
+          throw new IllegalStateException("예외가 발생했어요");
+        }
+    );
+
+    /** 테스트가 실패합니다.
+     * RuntimeException 은 IllegalStateException 의 상위타입입니다.
+    Assertions.assertThrows(
+        IllegalStateException.class,
+        () -> {
+          throw new RuntimeException("asdf");
+        }
+    );
+    */
+
+    Assertions.assertThrowsExactly(
+        IllegalStateException.class,
+        () -> {
+          throw new IllegalStateException("예외가 발생했어요");
+        }
+    );
+
+    /** 테스트가 실패합니다.
+     * IllegalStateException RuntimeException 의 한 종류이지만,
+     * Assertions.assertThrowsExactly 는 정확하게 타입이 일치해야만 성공으로 인식합니다.
+    Assertions.assertThrowsExactly(
+        RuntimeException.class,
+        () -> {
+          throw new IllegalStateException("예외가 발생했어요");
+        }
+    );
+    */
+}
+```
+
+<br/>
+
+
+
+## assertDoesNotThrow
+
+Exception 이 발생하지 않음을 보장합니다.
+
+```java
+@Test
+public void ASSERT_DOES_NOT_THROW(){
+    Assertions.assertDoesNotThrow(
+        () -> {}
+    );
+
+    Assertions.assertDoesNotThrow(
+        () -> "안녕하세요"
+    );
+}
+```
+
+<br/>
+
+
+
+## assertTimeout
+
+```java
+@Test
+public void ASSERT_TIMOUT(){
+    final Duration timeLimit = Duration.ofSeconds(1);
+
+    Assertions.assertTimeout(timeLimit, () -> {
+      sleep(500);
+    });
+
+    var externalResult = Assertions.assertTimeout(timeLimit, () -> {
+      sleep(500);
+      return true;
+    });
+    Assertions.assertTrue(externalResult);
+
+    /** 실패하는 케이스 : 미리 지정한 1초의 타임아웃을 넘어서는 케이스
+    Assertions.assertTimeout(timeLimit, () -> {
+      sleep(2000);
+    });
+    */
+}
+
+public void sleep(long ms){
+    try{
+      Thread.sleep(ms);
+    }
+    catch (Exception e){
+      e.printStackTrace();
+    }
+}
+```
+
+<br/>
+
+
+
+## assertTimeoutPreemptively
+
+> 참고자료 : [Junit5 Assertions/Assumptions 설명](https://elsboo.tistory.com/20)
+
+<br/>
+
+
+
+예를 들어 아래의 코드는 10초동안 기다려야 테스트가 끝납니다.
+
+```java
+public void sleep(long ms){
+    try{
+      Thread.sleep(ms);
+    }
+    catch (Exception e){
+      e.printStackTrace();
+    }
+}
+
+@Test
+public void ASSERT_TIMEOUT_NO_PREEMPTIVELY(){
+    final Duration timeLimit = Duration.ofSeconds(8);
+
+    var externalResult = Assertions.assertTimeout(timeLimit, () -> {
+      sleep(7000);
+      return true;
+    });
+    Assertions.assertTrue(externalResult);
+}
+```
+
+<br/>
+
+
+
+위의 테스트 코드를 1초 동안만 기다렸다가, 1초 내에 테스트가 끝나지 않으면 종료시키려 할 경우 아래와 같이 작성합니다. 아래 코드는 익셉션을 내면서 종료됩니다.
+
+```java
+@Disabled
+@TestMustFail
+public void ASSERT_TIMEOUT_PREEMPTIVELY(){
+    final Duration timeLimit = Duration.ofSeconds(1);
+
+    var externalResult = Assertions.assertTimeoutPreemptively(timeLimit, () -> {
+      sleep(7000);
+      return true;
+    });
+    Assertions.assertTrue(externalResult);
+}
+```
+
+<br/>
+
+
+
+assertTimeoutPreemptively 를 사용하면 오래 걸리는 작업이 정해둔 타임아웃 내에 끝나지 않으면 작업을 종료시킵니다. 이 과정에서 익셉션이 발생하기도 합니다. assertTimeoutPreemptively 는 독립적인 스레드로 실행하는데, 트랜잭션이 포함되어 있는 경우 트랜잭션 스레드와는 별개로 수행되어서 롤백이 안되는 경우가 생길 수 있습니다.<br/>
+
+오래 걸리는 작업인데, 결과값의 검증이 필요한 경우 `assertTimeoutPreemptively` 보다는 `assertTimeout` 을 사용하는 것이 낫습니다.<br/>
+
+<br/>
+
+
+
+무조건 사용을 안할 수는 없겠지만, 익셉션이 발생할 수도 있는 통신에 대한 환경 테스트가 필요한 경우 (e.g. 테스트 환경에서 특정 외부 API가 네트워크 접속이 되는지와 같은 테스트 전제 조건을 체크해야 할 경우) 에는 사용할수도 있는 아주 드문 케이스 중 하나입니다.<br/>
+
+<br/>
+
+
+
+
+
+
+
 
 
 
