@@ -1,4 +1,4 @@
 {
     "if-without-stepverifier": "StepVerifier 없이 테스트할 경우",
-    "reactor-test": "Reactor 테스트"
+    "stepverifier-test": "StepVerifier 테스트"
 }
