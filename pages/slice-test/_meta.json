@@ -3,8 +3,7 @@
     "what-is-context-configuration": "@ContextConfiguration 이란?",
     "what-is-mockbean": "@MockBean 이란?",
     "web-flux-test": "@WebFluxTest",
-    "web-test-client": "@WebTestClient",
-    "web-flux-test": "@WebFluxTest",
+    "web-test-client": "WebTestClient 로 API 검증",
     "data-r2dbc-test": "@DataR2dbcTest",
     "data-mongo-test": "@DataMongoTest"
 }
