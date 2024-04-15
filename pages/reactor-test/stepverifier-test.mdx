@@ -4,6 +4,16 @@ StepVerifier 를 기반으로 테스트를 수행하면 Publisher 를 다양한 
 
 
 
+## 참고
+
+- [https://www.baeldung.com/reactive-streams-step-verifier-test-publisher](https://www.baeldung.com/reactive-streams-step-verifier-test-publisher)
+
+
+
+<br/>
+
+
+
 ## 실행 방식
 
 ![](./img/stepverifier-test/flow.png)
@@ -836,6 +846,138 @@ public void VERIFY_THEN_ASSERT_THAT(){
 
 
 ## withVirtualTime
+
+만약 Mono 또는 Flux 와 같은 Publisher 에 delay 가 1시간이 걸려있다면 어떻게  해야 할까요? Flux 가 1000개의 item 을 가질 때 delayElements를 통해 각각의 Element를 수행하는 데에 1분의 delay가 필요한 경우 어떻게 해야 할까요?<br/>
+
+이 경우 테스트를 위해서 1000분을 기다려야할까요?<br/>
+
+이런 상황에 대비해서 StepVerifier 는 withVirtualTime() 메서드를 제공해주고 있습니다.<br/>
+
+```java
+public interface StepVerifier {
+    // ...
+    
+	static <T> FirstStep<T> withVirtualTime(Supplier<? extends Publisher<? extends T>> scenarioSupplier) {
+		return withVirtualTime(scenarioSupplier, Long.MAX_VALUE);
+	}
+    
+	static <T> FirstStep<T> withVirtualTime(Supplier<? extends Publisher<? extends T>> scenarioSupplier,
+			long n) {
+		return withVirtualTime(scenarioSupplier, () -> VirtualTimeScheduler.getOrSet(true), n);
+	}
+    
+    // ...
+    
+	static <T> FirstStep<T> withVirtualTime(
+			Supplier<? extends Publisher<? extends T>> scenarioSupplier,
+			Supplier<? extends VirtualTimeScheduler> vtsLookup,
+			long n) {
+		return withVirtualTime(scenarioSupplier, StepVerifierOptions.create()
+				.initialRequest(n)
+				.virtualTimeSchedulerSupplier(vtsLookup));
+	}
+
+	static <T> FirstStep<T> withVirtualTime(
+			Supplier<? extends Publisher<? extends T>> scenarioSupplier,
+			StepVerifierOptions options) {
+
+		DefaultStepVerifierBuilder.checkPositive(options.getInitialRequest());
+		Objects.requireNonNull(scenarioSupplier, "scenarioSupplier");
+
+		//force the default VTS supplier if the provided options doesn't define a VTS supplier.
+		//note we make a copy just in case the original options are reused.
+		if (options.getVirtualTimeSchedulerSupplier() == null) {
+			options = options
+					.copy()
+					.virtualTimeSchedulerSupplier(() -> VirtualTimeScheduler.getOrSet(true));
+		}
+		return DefaultStepVerifierBuilder.newVerifier(options, scenarioSupplier);
+	}
+    
+    // ...
+    
+}
+```
+
+withVirtualTime() 으로 FirstStep 을 생성하면 일반적인 Scheduler 가 아닌 VirtiualTimeScheduler 를 사용하게 됩니다. VirtualTimeScheduler 는 delay() 와 같은 함수들에 대해 실제로 대기하는 대신 건너뛰는 동작을 수행하게 됩니다.<br/>
+
+
+
+withVirtualTime() 메서드 사용시 우리가 사용할 수 있는 메서드 들은 아래의 2가지가 있습니다.
+
+- thenAwait () : 주어진 시간을 대기합니다. withVirtualTime() 과 함께 사용하면 실제 시간을 기다리는 대신 건너뛰는 동작을 수행합니다.
+- expectNoEvent() : 주어진 시간 동안 이벤트가 발생하지 않기를 기대합니다. 실제 시간을 기다리는 대신 주어진 시간을 건너뛰고 그 동안 이벤트가 발생하지 않기를 기대하는 검증을 수행합니다.
+
+<br/>
+
+
+
+### e.g. delay 가 걸리는 작업을 물리적인 delay 없이 테스트 수행
+
+```java
+@Test
+public void WITH_VIRTUAL_TIME_DELAY_AND_WAI_1(){
+    StepVerifier.withVirtualTime(() -> {
+          return Flux.just("Hello", "World", "Great")
+              .delayElements(Duration.ofSeconds(1));
+        })
+        .thenAwait(Duration.ofSeconds(2))
+        .expectNextCount(2)
+        .thenAwait(Duration.ofSeconds(1))
+        .expectNextCount(1)
+        .verifyComplete();
+}
+```
+
+위의 코드는 실제로 수행해보면 물리적으로는 3초가 걸리는 Publisher 를 400ms 안에 수행하는 것을 확인 가능합니다.<br/>
+
+
+
+### e.g. delay가 걸리는 작업이어도 외부에서 선언한 Flux 는 virtualTime이 적용되지 않음
+
+Flux 퍼블리셔를 Supplier 외부에서 생성 후에 전달해주면 virtualTime 을 통한 물리적인 delay 를 건너뛰는 동작이 수행되지 않습니다. 이것은 withVirtualTime() 메서드 내부에서 supplier 를 별도로 감싸는 동작이 있어서 생기는 현상입니다. 이 점에 주의해서 테스트 코드를 작성해야합니다.<br/>
+
+아래 코드는 3초가 걸립니다.
+
+```java
+@Test
+public void WITH_VIRTUAL_TIME_DELAY_AND_WAI_2(){
+    var longDelayPublisher = Flux.just("Hello", "World", "Great")
+        .delayElements(Duration.ofSeconds(1));
+
+    StepVerifier.withVirtualTime(() -> longDelayPublisher)
+        .thenAwait(Duration.ofSeconds(2))
+        .expectNextCount(2)
+        .thenAwait(Duration.ofSeconds(1))
+        .expectNextCount(1)
+        .verifyComplete();
+}
+```
+
+<br/>
+
+
+
+### e.g. 3일이 걸리는 Publisher 테스트
+
+아래 코드는 3일이 걸리는 Publisher 의 테스트를 단 밀리세컨드 안에 완료합니다.
+
+```java
+@Test
+public void WITH_VIRTUAL_TIME_3_DAY_DELAY(){
+    StepVerifier
+        .withVirtualTime(() -> {
+          return Flux.just("Hello", "World", "Great")
+              .delayElements(Duration.ofDays(1));
+        })
+        .expectSubscription()
+        .thenAwait(Duration.ofDays(1))
+        .expectNextCount(1)
+        .thenAwait(Duration.ofDays(2))
+        .expectNextCount(2)
+        .verifyComplete();
+}
+```
 
 <br/>
 
