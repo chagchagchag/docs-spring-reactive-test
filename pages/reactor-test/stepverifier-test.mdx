@@ -674,7 +674,9 @@ public void THEN_CANCEL(){
 
 ### verify...()
 
-`verify...()` 메서드는 아래와 같은 의미입니다. `expect...()` 메서드 뒤에 `verify()` 를 붙이는 것의 축약형식으로 제공되는 메서드 입니다.
+`verify()` 는 호출되는 시점부터 Publisher 를 검증하는 작업을 시작합니다. onComplete, onError, onCancel 이벤트 발생시 block 이 해제됩니다. 기본적으로는 timeout 없이 계속 기다립니다. 또는 Duration 을 명시해서 특정시간 동안만 block 되게끔 지정하는 것 역시 가능합니다.<br/>
+
+`verify()` 가 아닌  `verify...()` 메서드는 아래와 같은 의미입니다. `expect...()` 메서드 뒤에 `verify()` 를 붙이는 것의 축약형식으로 제공되는 메서드 입니다.
 
 - verifyComplete() : expectComplete() + verify()
 - verifyError() : expectError() + verify()
@@ -710,7 +712,126 @@ public interface StepVerifier {
 
 
 
+#### e.g. verify**()
 
+```java
+@Test
+public void VERIFY_METHODS(){
+    var message = "안녕하십니까?";
+    var err = new IllegalArgumentException(message);
+    StepVerifier.create(Mono.error(err))
+        .verifyErrorMessage(message);
+
+    StepVerifier.create(Mono.just(3000))
+        .expectNext(3000)
+        .verifyComplete();
+
+    var mono = Mono.delay(Duration.ofMillis(300));
+    StepVerifier.create(mono)
+        .verifyTimeout(Duration.ofMillis(100));
+}
+```
+
+<br/>
+
+
+
+#### e.g. verify()
+
+```java
+@Test
+public void VERIFY_METHOD(){
+    var publisher = Flux.just("Hello", "World", "Great");
+
+    StepVerifier.create(publisher)
+        .expectNextCount(3)
+        .expectComplete()
+        .log()
+        .verify();
+}
+```
+
+<br/>
+
+
+
+## verifyThenAssertThat()
+
+`verifyThenAssertThat()` 은 verify() 의 작업을 통해 Pubisher 를 검증하는 작업을 blocking 기반으로 모두 수행 후 Assertions 를 반환해서 Publisher 의 이벤트가 종료 후의 검증 작업을 수행할 수 있도록 제공되는 메서드입니다. <br/>
+
+언뜻 보기에 `verifyThenAssertThat()` 이 반환하는 Assertions 객체가 junit 이나 assertj 에서 제공하는 `Assertions` 로 착각할 수 있습니다. 하지만 Assertions 는 StepVerifier 내에 선언된 내부 interface 타입입니다. 주의가 필요합니다.
+
+```java
+public interface StepVerifier {
+    // ...
+    
+    interface Step<T> extends LastStep {
+        // ...
+    }
+    
+    Assertions verifyThenAssertThat();
+    Assertions verifyThenAssertThat(Duration duration);
+    
+	interface LastStep {
+        // ...
+	}
+    // ...
+    
+    interface Assertions {
+		Assertions hasDroppedElements();
+		Assertions hasNotDroppedElements();
+		Assertions hasDropped(Object... values);
+		Assertions hasDroppedExactly(Object... values);
+		Assertions hasDiscardedElements();
+		Assertions hasNotDiscardedElements();
+		Assertions hasDiscarded(Object... values);
+		Assertions hasDiscardedExactly(Object... values);
+		Assertions hasDiscardedElementsMatching(Predicate<Collection<Object>> matcher);
+		Assertions hasDiscardedElementsSatisfying(Consumer<Collection<Object>> consumer);
+		Assertions hasDroppedErrors();
+		Assertions hasNotDroppedErrors();
+		Assertions hasDroppedErrors(int n);
+		Assertions hasDroppedErrorOfType(Class<? extends Throwable> clazz);
+		Assertions hasDroppedErrorMatching(Predicate<Throwable> matcher);
+		Assertions hasDroppedErrorWithMessage(String message);
+		Assertions hasDroppedErrorWithMessageContaining(String messagePart);
+		Assertions hasDroppedErrorsSatisfying(Consumer<Collection<Throwable>> errorsConsumer);
+		Assertions hasDroppedErrorsMatching(Predicate<Collection<Throwable>> errorsConsumer);
+		Assertions hasOperatorErrors();
+		Assertions hasOperatorErrors(int n);
+		Assertions hasOperatorErrorOfType(Class<? extends Throwable> clazz);
+		Assertions hasOperatorErrorMatching(Predicate<Throwable> matcher);
+		Assertions hasOperatorErrorWithMessage(String message);
+		Assertions hasOperatorErrorWithMessageContaining(String messagePart);
+		Assertions hasOperatorErrorsSatisfying(Consumer<Collection<Tuple2<Optional<Throwable>, Optional<?>>>> errorsConsumer);
+		Assertions hasOperatorErrorsMatching(Predicate<Collection<Tuple2<Optional<Throwable>, Optional<?>>>> errorsConsumer);
+		Assertions tookLessThan(Duration d);
+		Assertions tookMoreThan(Duration d);
+    }
+}
+```
+
+<br/>
+
+
+
+### e.g. verifyThenAssertThat()
+
+```java
+@Test
+public void VERIFY_THEN_ASSERT_THAT(){
+    var delay = Duration.ofSeconds(1);
+    StepVerifier.create(Flux.just("Hello", "World", "Great"))
+        .expectNextCount(3)
+        .expectComplete()
+        .log()
+        .verifyThenAssertThat(delay)
+        .tookLessThan(delay)
+        .hasNotDroppedElements();
+}
+```
+
+<br/>
 
 
 
