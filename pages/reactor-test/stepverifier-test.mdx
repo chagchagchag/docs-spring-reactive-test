@@ -320,7 +320,7 @@ public void TEST_STEP_ON_NEXT_EXAMPLE_1(){
 
 ### Context, ContextExpectations
 
-StepVerifier 를 이용해서 Flux, Mono 등이 수행되는 퍼블리셔가 수행되는 중인 Context 를 테스트합니다. 코틀린 문서에서도 설명했지만, Context 는 자바의 ThreadLocal 처럼 실행 문맥입니다. 다만 webflux 의 경우 비동기 논블로킹이기 때문에 중간에 실행되는 스레드가 바뀔 수 있습니다. 따라서 Spring Webflux 에서는 ThreadLocal 을 사용이 불가능합니다.<br/>
+StepVerifier 를 이용해서 Flux, Mono 등이 수행되는 퍼블리셔가 수행되는 중인 Context 를 테스트합니다. [코틀린 정리문서 - CoroutineContext](https://chagchagchag.github.io/docs-kotlin-coroutine/coroutine-context/what-is-coroutine-context/) 에서도 설명했지만, Context 는 자바의 ThreadLocal 처럼 실행 문맥입니다. 다만 webflux 의 경우 비동기 논블로킹이기 때문에 중간에 실행되는 스레드가 바뀔 수 있습니다. 따라서 Spring Webflux 에서는 ThreadLocal 을 사용이 불가능합니다.<br/>
 
 webflux 를 이용해서 Publisher 프로그래밍을 작성한다고 하더라도 특정 시점의 실행 문맥에서는 Context 를 통해 값을 공유해야 할 필요가 있습니다. 그렇지 않으면 과도한 flatMap 지옥에 빠질 수 있기 때문입니다.<br/>
 
@@ -386,13 +386,343 @@ public void CONTEXT_EXAMPLE(){
 
 ## LastStep
 
+> 참고 : [StepVerifier.java](https://github.com/reactor/reactor-core/blob/main/reactor-test/src/main/java/reactor/test/StepVerifier.java)
+
+LastStep 은 StepVerifier 내에 선언된 내부 interface 이며, 최종 결과를 검증하는 기능들에 많이 쓰입니다.<br/>
+
+Step\<T\> 은 LastStep 을 확장(상속)하고 있기에, Step 을 통해서 테스트를 종료시키고 싶을 때 LastStep 의 메서드 들을 호출해서 검증 작업을 마무리합니다.<br/>
+
+LastStep 에서 제공되는 기능들은 아래와 같습니다.
+
+```java
+public interface StepVerifier {
+    // ...
+    
+    interface Step<T> extends LastStep {
+        // ...
+    }
+    
+	interface LastStep {
+		StepVerifier consumeErrorWith(Consumer<Throwable> consumer);
+
+		StepVerifier expectError();
+		StepVerifier expectError(Class<? extends Throwable> clazz);
+		StepVerifier expectErrorMessage(String errorMessage);
+		StepVerifier expectErrorMatches(Predicate<Throwable> predicate);
+		StepVerifier expectErrorSatisfies(Consumer<Throwable> assertionConsumer);
+		StepVerifier expectTimeout(Duration duration);
+		StepVerifier expectComplete();
+        
+		StepVerifier thenCancel();
+
+		Duration verifyError();
+		Duration verifyError(Class<? extends Throwable> clazz);
+		Duration verifyErrorMessage(String errorMessage);
+		Duration verifyErrorMatches(Predicate<Throwable> predicate);
+		default Duration verifyTimeout(Duration duration) {
+			return expectTimeout(duration).verify();
+		}
+        
+		Duration verifyErrorSatisfies(Consumer<Throwable> assertionConsumer);
+		Duration verifyComplete();
+	}
+}
+```
+
+<br/>
+
+
+
+### expectError**()
+
+Publisher 가 onError 이벤트를 발생시킬 것으로 보일 때 consumeErrorWith() 또는 expectError**() 메서드를 호출해서 검증을 수행할 수 있습니다.
+
+- consumeErrorWith() : 전달받은 Consumer 를 이용해서 Consumer 내부에서 검증을 수행합니다.
+- expectError() : onError 이벤트가 전달되었는지 여부를 검증합니다. Class 타입을 전달해서 어떤 타입의 에러가 발생하는지를 검증합니다.
+- expectErrorMessage() : onError 이벤트로 전달된 Error 의 메시지가 원하는 에러 메시지인지 검증합니다.
+- expectErrorMatches() : Exception 에 대한 검증 등을 람다식으로 표현한 Predicate 람다를 이용해서 전달받은 Exception 객체가 올바른지를 검증합니다.
+- expectErrorSatisfies() : consumeErrorWith() 와 동일한 역할을 수행합니다.
+
+```java
+public interface StepVerifier {
+    // ...
+    
+    interface Step<T> extends LastStep {
+        // ...
+    }
+    
+	interface LastStep {
+		StepVerifier consumeErrorWith(Consumer<Throwable> consumer);
+
+		StepVerifier expectError();
+		StepVerifier expectError(Class<? extends Throwable> clazz);
+		StepVerifier expectErrorMessage(String errorMessage);
+		StepVerifier expectErrorMatches(Predicate<Throwable> predicate);
+		StepVerifier expectErrorSatisfies(Consumer<Throwable> assertionConsumer);
+		StepVerifier expectTimeout(Duration duration);
+		StepVerifier expectComplete();
+        
+        // ...
+        
+	}
+}
+```
+
+<br/>
+
+
+
+#### e.g. expectError**()
+
+간단한 예제이기에 코드 설명은 건너뛰겠습니다.
+
+```java
+@Test
+public void SIMPLE_EXPECT_ERROR(){
+    // 1) 단순 검증
+    var errorFlux1 = Flux.error(new IllegalArgumentException());
+    StepVerifier.create(errorFlux1)
+        .expectError()
+        .verify();
+
+    // 2) 예외 타입 검증
+    var errorFlux2 = Flux.error(new IllegalArgumentException());
+    StepVerifier.create(errorFlux2)
+        .expectError(IllegalArgumentException.class)
+        .verify();
+
+    // 3) 예외 메시지 검증
+    String message = "웁스, 에러에요.";
+    var errorFlux3 = Flux.error(new IllegalArgumentException(message));
+    StepVerifier.create(errorFlux3)
+        .expectErrorMessage(message)
+        .verify();
+
+    // 4) expectErrorMatches
+    String message2 = "웁스, 에러에요";
+    var errorFlux4 = Flux.error(new IllegalArgumentException(message2));
+    StepVerifier.create(errorFlux4)
+        .expectErrorMatches(e -> {
+          return e instanceof IllegalArgumentException && e.getMessage().equals(message2);
+        })
+        .verify();
+
+    // 5) expectErrorSatisfies
+    String message3 = "웁스, 에러네요";
+    var errorFlux5 = Flux.error(new IllegalArgumentException(message3));
+    StepVerifier.create(errorFlux5)
+        .expectErrorSatisfies(e -> {
+          Assertions.assertInstanceOf(IllegalArgumentException.class, e);
+          Assertions.assertEquals(message3, e.getMessage());
+        })
+        .verify();
+}
+```
+
+<br/>
+
+
+
+### expectTimeout()
+
+onNext, onComplete 이벤트가 전달받은 duration 내에 발생하지 않으면 true 로 판단합니다. 특정 duration 이상 소요되는지를 검증합니다. 
+
+```java
+public interface StepVerifier {
+    // ...
+    
+    interface Step<T> extends LastStep {
+        // ...
+    }
+    
+	interface LastStep {
+        // ...
+		StepVerifier expectTimeout(Duration duration);
+	}
+}
+```
+
+<br/>
+
+
+
+#### e.g. expectTimeout()
+
+```java
+//-- expectTimeout
+@Test
+public void EXPECT_TIMEOUT_TEST(){
+    // 1)
+    var publisher1 = Mono.delay(Duration.ofMillis(300));
+    StepVerifier.create(publisher1)
+        .expectTimeout(Duration.ofMillis(50))
+        .verify();
+
+    // 2) 아래 코드는 에러가 나야 정상인 코드
+    //    var publisher2 = Mono.delay(Duration.ofMillis(200));
+    //    StepVerifier.create(publisher2)
+    //        .expectTimeout(Duration.ofSeconds(1))
+    //        .verify();
+
+    // 3)
+    var publisher3 = Flux.range(0, 10)
+        .delayElements(Duration.ofMillis(500));
+    StepVerifier.create(publisher3)
+        .expectTimeout(Duration.ofMillis(100))
+        .verify();
+}
+```
+
+<br/>
+
+
+
+### expectComplete() 
+
+onComplete 이벤트가 발생함을 검증합니다. verifyComplete() 는 expectComplete(), verify() 메서드를 합친 메서드입니다.
+
+```java
+public interface StepVerifier {
+    // ...
+    
+    interface Step<T> extends LastStep {
+        // ...
+    }
+    
+	interface LastStep {
+        // ...
+        
+		StepVerifier expectComplete();
+        
+        // ...
+	}
+}
+```
+
+<br/>
+
+
+
+#### e.g. expectComplete()
+
+```java
+@Test
+public void EXPECT_COMPLETE_TEST(){
+    // 1)
+    var publisher1 = Flux.just("Hello", "World", "Great");
+    StepVerifier.create(publisher1)
+        .expectNextCount(3)
+        .expectComplete()
+        .verify();
+
+    // 2) 아래 코드는 Exception 이 발생하는 코드에 대해 expectError** 을 하지 않았으므로 에러가 발생합니다.
+    //    var publisher2 = Flux.error(new IllegalArgumentException());
+    //    StepVerifier.create(publisher2)
+    //        .expectComplete()
+    //        .verify();
+}
+```
+
+<br/>
+
+
+
+### thenCancel()
+
+Publisher 를 통해 이벤트를 처리하는 도중에 thenCancel 이벤트를 호춣해서 Subscribe 하는 동작을 cancel 하는 것 역시 가능합니다. Subscription.cancel() 을 호출하는 것과 동일한 동작입니다.
+
+```java
+public interface StepVerifier {
+    // ...
+    
+    interface Step<T> extends LastStep {
+        // ...
+    }
+    
+	interface LastStep {
+		// ...
+        
+		StepVerifier thenCancel();
+
+		// ...
+	}
+}
+```
+
+<br/>
+
+
+
+#### e.g. thenCancel()
+
+```java
+@Test
+public void THEN_CANCEL(){
+    var publisher = Flux.range(1, Integer.MAX_VALUE)
+        .doOnNext(number -> System.out.println("안녕하세요"));
+
+    StepVerifier.create(publisher)
+        .expectNextCount(2)
+        .thenCancel()
+        .verify();
+}
+```
+
+<br/>
+
+
+
+### verify...()
+
+`verify...()` 메서드는 아래와 같은 의미입니다. `expect...()` 메서드 뒤에 `verify()` 를 붙이는 것의 축약형식으로 제공되는 메서드 입니다.
+
+- verifyComplete() : expectComplete() + verify()
+- verifyError() : expectError() + verify()
+- verifyErrorMessages() : expectErrorMessages() + verify()
+- verifyErrorMatches() : expectErrorMatches() + verify()
+- verifyErrorSatisfies() : expectErrorSatisfies() + verify()
+
+```java
+public interface StepVerifier {
+    // ...
+    
+    interface Step<T> extends LastStep {
+        // ...
+    }
+    
+	interface LastStep {
+        // ...
+		Duration verifyError();
+		Duration verifyError(Class<? extends Throwable> clazz);
+		Duration verifyErrorMessage(String errorMessage);
+		Duration verifyErrorMatches(Predicate<Throwable> predicate);
+		default Duration verifyTimeout(Duration duration) {
+			return expectTimeout(duration).verify();
+		}
+        
+		Duration verifyErrorSatisfies(Consumer<Throwable> assertionConsumer);
+		Duration verifyComplete();
+	}
+}
+```
+
+<br/>
+
+
+
+
+
 
 
 ## withVirtualTime
 
+<br/>
+
 
 
 ## TestPublisher
+
+<br/>
 
 
 
