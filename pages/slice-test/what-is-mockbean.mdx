@@ -1,0 +1,235 @@
+## @MockBean
+
+`@MockBean` 은 어떤 컴포넌트가 다른 컴포넌트에 의존성을 가지고 있으며, 그 컴포넌트를 가짜 객체로 지정해서 원하는 여러 가지 상황을 가정한 테스트를 Mocking 기반으로 수행하려 할 때 `@MockBean` 으로 선언합니다. `@MockBean` 은 Bean 으로 등록한 객체에 대해서만 지정 가능합니다.<br/>
+
+만약 일반 객체가 여러 객체를 의존하고 있고 의존관계의 객체를 Mocking 기반으로 테스트하고 싶다면, 의존객체에 대해서는 Mockito 의 `@Mock` 를 통해서 가짜 객체로 선언하고 의존객체를 묶어주는 것은 `@InjectMocks` 를 사용하면 됩니다.<br/>
+
+스프링에서 제공해주는 [MockBean.java](https://github.com/spring-projects/spring-boot/blob/main/spring-boot-project/spring-boot-test/src/main/java/org/springframework/boot/test/mock/mockito/MockBean.java) 의 코드는 아래와 같습니다.
+
+```java
+package org.springframework.boot.test.mock.mockito;
+
+import java.lang.annotation.Documented;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Repeatable;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+
+import org.junit.runner.RunWith;
+import org.mockito.Answers;
+import org.mockito.MockSettings;
+
+import org.springframework.context.ApplicationContext;
+import org.springframework.core.annotation.AliasFor;
+import org.springframework.test.context.junit4.SpringRunner;
+
+
+@Target({ ElementType.TYPE, ElementType.FIELD })
+@Retention(RetentionPolicy.RUNTIME)
+@Documented
+@Repeatable(MockBeans.class)
+public @interface MockBean {
+	String name() default "";
+    
+	@AliasFor("classes")
+	Class<?>[] value() default {};
+	
+    @AliasFor("value")
+	Class<?>[] classes() default {};
+	
+    Class<?>[] extraInterfaces() default {};
+	
+    Answers answer() default Answers.RETURNS_DEFAULTS;
+	
+    boolean serializable() default false;
+	
+    MockReset reset() default MockReset.AFTER;
+
+}
+```
+
+<br/>
+
+
+
+## @MockBean 을 이용한 테스트코드
+
+간단한 예제를 살펴보는 것으로 이번 문서를 마무리하겠습니다.<br/>
+
+### 애플리케이션 코드
+
+**@SpringBootApplication 적용 클래스**
+
+```java
+package io.chagchagchag.example.reactive_test_example;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class ReactiveTestExampleApplication {
+
+	public static void main(String[] args) {
+		SpringApplication.run(ReactiveTestExampleApplication.class, args);
+	}
+
+}
+```
+
+<br/>
+
+
+
+**HealthcheckController.java** 
+
+```java
+package io.chagchagchag.example.reactive_test_example.healthcheck;
+
+import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+import reactor.core.publisher.Mono;
+
+@RequiredArgsConstructor
+@RestController
+public class HealthcheckController {
+  private final HealthcheckService healthcheckService;
+  @GetMapping("/healthcheck/ready")
+  public Mono<String> getReady(){
+    return Mono.just(healthcheckService.ok());
+  }
+}
+```
+
+<br/>
+
+
+
+**HealthcheckService.java**
+
+```java
+package io.chagchagchag.example.reactive_test_example.healthcheck;
+
+import org.springframework.stereotype.Service;
+
+@Service
+public class HealthcheckService {
+  public String ok(){
+    return "OK";
+  }
+}
+```
+
+<br/>
+
+
+
+### 테스트 코드
+
+위와 같이 정의된 애플리케이션 코드를 테스트해봅니다.
+
+```java
+package io.chagchagchag.example.reactive_test_example.slice_test.mock_bean;
+
+import io.chagchagchag.example.reactive_test_example.healthcheck.HealthcheckController;
+import io.chagchagchag.example.reactive_test_example.healthcheck.HealthcheckService;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mockito;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.ContextConfiguration;
+import org.springframework.test.context.junit.jupiter.SpringExtension;
+import reactor.core.publisher.Mono;
+import reactor.test.StepVerifier;
+
+@ExtendWith(SpringExtension.class)
+@ContextConfiguration(
+    classes = {HealthcheckController.class}
+)
+public class MockBeanTest {
+
+  @Autowired
+  private HealthcheckController healthcheckController;
+
+  @MockBean
+  private HealthcheckService healthcheckService;
+
+  @Test
+  public void MOCK_BEAN_TEST(){
+    // given
+    var expected = "OK";
+    Mockito.when(healthcheckService.ok())
+        .thenReturn(expected);
+
+    // when
+    Mono<String> getReady = healthcheckController.getReady();
+
+    // then
+    StepVerifier.create(getReady)
+        .expectNext(expected)
+        .verifyComplete();
+  }
+
+}
+```
+
+<br/>
+
+
+
+HealthcheckService 컴포넌트를 Mocking 된 Bean 으로 주입받는 코드는 아래와 같습니다. 이렇게 하면 HealthcheckController 내에 healthcheckService 는 MockBean 기반의 객체로 주입받습니다.
+
+```java
+@MockBean
+private HealthcheckService healthcheckService;
+
+@Autowired
+private HealthcheckController healthcheckController;
+```
+
+<br/>
+
+
+
+이번에는 Mockito 를 통해서 HealthcheckService 가 특정 동작을 하는지 가정을 해서 원하는 결과를 내는지 테스트하는 부분의 코드입니다.
+
+```java
+
+@Test
+public void MOCK_BEAN_TEST(){
+    // given
+    var expected = "OK";
+    Mockito.when(healthcheckService.ok())
+        .thenReturn(expected);
+
+    // when
+    Mono<String> getReady = healthcheckController.getReady();
+
+    // then
+    StepVerifier.create(getReady)
+        .expectNext(expected)
+        .verifyComplete();
+}
+```
+
+given 
+
+- healthCheckService 객체의 ok() 메서드를 호출할 때 "OK" 라는 문자열을 리턴하는 상황을 가정합니다.
+
+when
+
+- healthCheckController 객체의 getReady() 가 호출되는 상황입니다.
+
+then
+
+- 결과값을 검증합니다.
+- StepVerifier 로 healthCheckController 가 이번 테스트 케이스의 조건에 대해 "OK" 라는 문자열을 리턴하는지 체크합니다.
+
+<br/>
+
+
+
+
+
