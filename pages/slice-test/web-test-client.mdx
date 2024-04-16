@@ -362,9 +362,336 @@ public interface WebTestClient {
 }
 ```
 
+<br/>
+
 
 
 ## e.g.
+
+### status
+
+```java
+package io.chagchagchag.example.reactive_test_example.slice_test.verification;
+
+import io.chagchagchag.example.reactive_test_example.healthcheck.HealthcheckController;
+import io.chagchagchag.example.reactive_test_example.healthcheck.HealthcheckService;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mockito;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.ContextConfiguration;
+import org.springframework.test.context.junit.jupiter.SpringExtension;
+import org.springframework.test.web.reactive.server.WebTestClient;
+
+@ExtendWith(SpringExtension.class)
+@ContextConfiguration(classes = {
+    HealthcheckController.class
+})
+public class StatusVerificationTest {
+  @MockBean
+  private HealthcheckService healthcheckService;
+  
+  @Autowired
+  private HealthcheckController healthcheckController;
+
+  @Test
+  public void TEST_RESPONSE_IS_OK(){
+    WebTestClient webTestClient = WebTestClient
+        .bindToController(healthcheckController)
+        .build();
+
+    var expected = "OK";
+    Mockito.when(healthcheckService.ok())
+        .thenReturn("OK");
+
+    webTestClient.get()
+        .uri("/healthcheck/ready")
+        .exchange()
+        .expectStatus()
+        .isOk()
+        .expectStatus()
+        .is2xxSuccessful();
+  }
+}
+```
+
+<br/>
+
+
+
+### header 
+
+Controller
+
+```java
+package io.chagchagchag.example.reactive_test_example.healthcheck;
+
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+import reactor.core.publisher.Mono;
+
+@RequiredArgsConstructor
+@RestController
+public class HealthcheckController {
+  private final HealthcheckService healthcheckService;
+  // ...
+
+  @GetMapping("/healthcheck/ready/header")
+  public Mono<ResponseEntity<String>> getReadyWithHeader(){
+    return Mono.just(healthcheckService.ok())
+        .map(okMessage -> ResponseEntity.ok()
+            .header("brand", "nike")
+            .header("category", "shoes")
+            .header("email", "abc@gmail.com")
+            .body(okMessage)
+        );
+  }
+}
+```
+
+<br/>
+
+
+
+테스트
+
+```java
+package io.chagchagchag.example.reactive_test_example.slice_test.verification;
+
+import io.chagchagchag.example.reactive_test_example.healthcheck.HealthcheckController;
+import io.chagchagchag.example.reactive_test_example.healthcheck.HealthcheckService;
+import org.assertj.core.api.Assertions;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mockito;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.ContextConfiguration;
+import org.springframework.test.context.junit.jupiter.SpringExtension;
+import org.springframework.test.web.reactive.server.WebTestClient;
+
+@ExtendWith(SpringExtension.class)
+@ContextConfiguration(classes = HealthcheckController.class)
+public class HeaderVerificationTest {
+  @MockBean
+  private HealthcheckService healthcheckService;
+  @Autowired
+  private HealthcheckController healthcheckController;
+
+  @Test
+  public void TEST_HEADER(){
+    // given
+    WebTestClient webTestClient = WebTestClient
+        .bindToController(healthcheckController)
+        .build();
+
+    String expected = "OK";
+
+    // when
+    Mockito.when(healthcheckService.ok())
+        .thenReturn("OK");
+
+    // then
+    webTestClient.get()
+        .uri("/healthcheck/ready/header")
+        .exchange()
+        .expectHeader()
+        .contentType("text/plain;charset=UTF-8")
+        .expectHeader()
+        .exists("brand")
+        .expectHeader()
+        .value("category", categoryHeaderValue -> {
+          Assertions.assertThat(categoryHeaderValue).isEqualTo("shoes");
+        })
+        .expectHeader()
+        .doesNotExist("gender")
+        .expectHeader()
+        .valueEquals("email", "abc@gmail.com");
+
+  }
+}
+```
+
+<br/>
+
+
+
+### cookie 
+
+Controller
+
+```java
+package io.chagchagchag.example.reactive_test_example.healthcheck;
+
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseCookie;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ServerWebExchange;
+import reactor.core.publisher.Mono;
+
+@RequiredArgsConstructor
+@RestController
+public class HealthcheckController {
+  private final HealthcheckService healthcheckService;
+  
+  // ...
+  
+  @GetMapping("/healthcheck/ready/cookie")
+  public Mono<String> getReadyWithCookie(
+      ServerWebExchange exchange
+  ){
+    ResponseCookie cookie = ResponseCookie.from("brand", "nike")
+        .maxAge(300)
+        .domain("youtube.com")
+        .httpOnly(true)
+        .path("/")
+        .sameSite("None")
+        .secure(true)
+        .build();
+
+    exchange.getResponse().addCookie(cookie);
+    return Mono.just(healthcheckService.ok());
+  }
+}
+```
+
+<br/>
+
+
+
+테스트
+
+```java
+package io.chagchagchag.example.reactive_test_example.slice_test.verification;
+
+// ...
+
+@ExtendWith(SpringExtension.class)
+@ContextConfiguration(classes = HealthcheckController.class)
+public class CookieVerificationTest {
+  @MockBean
+  private HealthcheckService healthcheckService;
+  @Autowired
+  private HealthcheckController healthcheckController;
+
+  @Test
+  public void TEST_COOKIE(){
+    // given
+    String expected = "OK";
+    WebTestClient webTestClient = WebTestClient.bindToController(healthcheckController)
+        .build();
+
+    // when
+    Mockito.when(healthcheckService.ok())
+        .thenReturn(expected);
+
+    // then
+    var cookieName = "brand";
+    webTestClient.get()
+        .uri("/healthcheck/ready/cookie")
+        .exchange()
+        .expectCookie().exists(cookieName)
+        .expectCookie().valueEquals(cookieName, "nike")
+        .expectCookie().domain(cookieName,"youtube.com")
+        .expectCookie().httpOnly(cookieName,true)
+        .expectCookie().path(cookieName, "/")
+        .expectCookie().secure(cookieName, true)
+        .expectCookie().maxAge(cookieName, Duration.ofSeconds(300));
+  }
+}
+```
+
+<br/>
+
+
+
+### body  
+
+Controller
+
+```java
+package io.chagchagchag.example.reactive_test_example.healthcheck;
+
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseCookie;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ServerWebExchange;
+import reactor.core.publisher.Mono;
+
+@RequiredArgsConstructor
+@RestController
+public class HealthcheckController {
+  private final HealthcheckService healthcheckService;
+  
+    // ... 
+  static record ReadyStatusBody(
+      String message
+  ){}
+
+  @GetMapping("/healthcheck/ready/body")
+  public Mono<ReadyStatusBody> readyWithBody(){
+    return Mono.just(healthcheckService.ok())
+        .map(message -> new ReadyStatusBody(message));
+  }
+}
+```
+
+<br/>
+
+
+
+테스트
+
+```java
+package io.chagchagchag.example.reactive_test_example.slice_test.verification;
+
+// ...
+
+@ExtendWith(SpringExtension.class)
+@ContextConfiguration(classes = HealthcheckController.class)
+public class BodyVerificationTest {
+  @MockBean
+  private HealthcheckService healthcheckService;
+  @Autowired
+  private HealthcheckController healthcheckController;
+
+  static record ReadyStatusBody(
+      String message
+  ){}
+
+  @Test
+  public void TEST_BODY(){
+    String expected = "OK";
+    WebTestClient webTestClient = WebTestClient
+        .bindToController(healthcheckController)
+        .build();
+
+    Mockito.when(healthcheckService.ok())
+        .thenReturn("OK");
+
+    ReadyStatusBody expectedBody = new ReadyStatusBody(expected);
+
+    webTestClient.get()
+        .uri("/healthcheck/ready/body")
+        .exchange()
+        .expectHeader()
+        .contentType(MediaType.APPLICATION_JSON)
+        .expectBody(ReadyStatusBody.class)
+        .isEqualTo(expectedBody)
+        .value(r -> {
+          Assertions.assertThat(r.message).isEqualTo(expected);
+        });
+  }
+
+}
+```
 
 
 
