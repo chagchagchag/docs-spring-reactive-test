@@ -181,8 +181,17 @@ public class ContextConfigurationTest_Full_Scan {
 
 <br/>
 
-- @ContextConfiguration(classes = {ReactiveTestExampleApplication.class})
-  - @SpringBootApplication 애노테이션이 적용된 `ReactiveTestExampleApplication` 이라는 클래스를 @ContextConfiguration 으로 로드했습니다.
+
+
+위의 코드에서 ContextConfiguration 이 적용된 부분은 아래와 같습니다.
+
+```java
+@ContextConfiguration(classes = {ReactiveTestExampleApplication.class})
+```
+
+- @SpringBootApplication 애노테이션이 적용된 `ReactiveTestExampleApplication` 이라는 클래스를 @ContextConfiguration 으로 로드했습니다.
+
+
 
 <br/>
 
@@ -190,39 +199,244 @@ public class ContextConfigurationTest_Full_Scan {
 
 ## @Component 선택 후 부분 스캔
 
+- 실제 코드의 원하는 Component 들만을 읽어들여서 부분적인 테스트를 수행하는 방식
+- 실제 객체를 사용하는 테스트 입니다.
+
+**@SpringBootApplication 적용 클래스**
+
+```java
+package io.chagchagchag.example.reactive_test_example;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class ReactiveTestExampleApplication {
+
+	public static void main(String[] args) {
+		SpringApplication.run(ReactiveTestExampleApplication.class, args);
+	}
+
+}
+```
+
+<br/>
 
 
 
+**HealthcheckController.java** 
+
+```java
+package io.chagchagchag.example.reactive_test_example.healthcheck;
+
+import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+import reactor.core.publisher.Mono;
+
+@RequiredArgsConstructor
+@RestController
+public class HealthcheckController {
+  private final HealthcheckService healthcheckService;
+  @GetMapping("/healthcheck/ready")
+  public Mono<String> getReady(){
+    return Mono.just(healthcheckService.ok());
+  }
+}
+```
+
+<br/>
+
+
+
+**HealthcheckService.java**
+
+```java
+package io.chagchagchag.example.reactive_test_example.healthcheck;
+
+import org.springframework.stereotype.Service;
+
+@Service
+public class HealthcheckService {
+  public String ok(){
+    return "OK";
+  }
+}
+```
+
+<br/>
+
+
+
+**테스트 코드**
+
+```java
+package io.chagchagchag.example.reactive_test_example.slice_test.context_configuration.partial_component_scan;
+
+import io.chagchagchag.example.reactive_test_example.healthcheck.HealthcheckController;
+import io.chagchagchag.example.reactive_test_example.healthcheck.HealthcheckService;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.test.context.ContextConfiguration;
+import org.springframework.test.context.junit.jupiter.SpringExtension;
+import reactor.test.StepVerifier;
+
+@ExtendWith(SpringExtension.class)
+@ContextConfiguration(classes = {
+    HealthcheckController.class,
+    HealthcheckService.class,
+})
+public class ContextConfigurationTest_Partial_Component_Scan {
+  @Autowired
+  HealthcheckController healthcheckController;
+
+  @Test
+  public void TEST_HEALTH_CHECK_CONTROLLER_USING_PARTIAL_COMPONENT_SCAN(){
+    var expected = "OK";
+    StepVerifier.create(healthcheckController.getReady())
+        .expectNext(expected)
+        .verifyComplete();
+  }
+}
+```
+
+
+
+위의 코드에서 원하는 컴포넌트 들만을 스캔하는 부분은 아래와 같습니다.
+
+```java
+@ContextConfiguration(classes = {
+    HealthcheckController.class,
+    HealthcheckService.class,
+})
+```
+
+HealthcheckCotroller.class, HealthcheckService.class 만을 골라서 컴포넌트 스캔을 하고 있습니다.<br/>
 
 
 
 ## @TestConfiguration 스캔
 
+- 테스트 용도로 정의한 `@TestConfiguration` 기반의 설정 코드를 @ContextConfiguration 애노테이션으로 테스트 코드에 읽어들이는 방식
+- 테스트 용도로 별도 정의한 객체를 스캔하는 방식입니다.
+- Database 처럼 테스트의 검증 동작들이 실제 Database에 값의 변경을 가하면 안되는 환경 등에 대해 @TestConfiguration 등을 통해 별도의 가상 환경(testcontainers 등)을 정의해두기도 합니다.
+
+<br/>
 
 
 
+**@SpringBootApplication 적용 클래스**
+
+```java
+package io.chagchagchag.example.reactive_test_example;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class ReactiveTestExampleApplication {
+
+	public static void main(String[] args) {
+		SpringApplication.run(ReactiveTestExampleApplication.class, args);
+	}
+
+}
+```
+
+<br/>
 
 
 
+**HealthcheckController.java** 
+
+```java
+package io.chagchagchag.example.reactive_test_example.healthcheck;
+
+import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+import reactor.core.publisher.Mono;
+
+@RequiredArgsConstructor
+@RestController
+public class HealthcheckController {
+  private final HealthcheckService healthcheckService;
+  @GetMapping("/healthcheck/ready")
+  public Mono<String> getReady(){
+    return Mono.just(healthcheckService.ok());
+  }
+}
+```
+
+<br/>
 
 
 
+**HealthcheckService.java**
+
+```java
+package io.chagchagchag.example.reactive_test_example.healthcheck;
+
+import org.springframework.stereotype.Service;
+
+@Service
+public class HealthcheckService {
+  public String ok(){
+    return "OK";
+  }
+}
+```
+
+<br/>
 
 
 
+**테스트 코드**
+
+```java
+package io.chagchagchag.example.reactive_test_example.slice_test.context_configuration.test_configuration;
+
+import io.chagchagchag.example.reactive_test_example.healthcheck.HealthcheckController;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.test.context.ContextConfiguration;
+import org.springframework.test.context.junit.jupiter.SpringExtension;
+import reactor.test.StepVerifier;
+
+@ExtendWith(SpringExtension.class)
+@ContextConfiguration(
+    classes = {
+        HealthCheckTestConfiguration.class
+    }
+)
+public class ContextConfigurationTest_Test_Configuration {
+  @Autowired
+  private HealthcheckController healthcheckController;
+
+  @Test
+  public void TEST_HEALTH_CHECK_CONTROLLER_USING_TEST_CONFIGURATION(){
+    StepVerifier.create(healthcheckController.getReady())
+        .expectNext("OK")
+        .verifyComplete();
+  }
+}
+```
+
+<br/>
 
 
 
+위의 코드에서 TestConfiguration 설정 코드를 스캔하는 부분은 아래와 같습니다.
 
-
-
-
-
-
-
-
-
-
+```java
+@ContextConfiguration(
+    classes = {
+        HealthCheckTestConfiguration.class
+    }
+)
+```
 
 
 
