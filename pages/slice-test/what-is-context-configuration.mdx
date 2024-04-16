@@ -1,0 +1,228 @@
+## @ContextConfiguration 
+
+`@ContextConfiguration` 은 `org.springframework.test.context`  패키지 내에 정의된 테스트 용도의 컴포넌트 스캔 용도의 애노테이션입니다.<br/>
+
+`@ContextConfiguration` 은 테스트 시에 읽어들일 컴포넌트 들을 읽어들일 때 사용하는 테스트 시에 컴포넌트를 스캔하는 용도의 애노테이션입니다. `org.springframewor.test.context` 라고 하는 test 전용 용도의 패키지에 정의된 애노테이션이기에 테스트 용도로만 사용 가능합니다.<br/>
+
+
+
+[ContextConfiguration.java](https://github.com/spring-projects/spring-framework/blob/main/spring-test/src/main/java/org/springframework/test/context/ContextConfiguration.java) 의 내부 코드는 아래와 같습니다.
+
+```java
+package org.springframework.test.context;
+
+import java.lang.annotation.Documented;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Inherited;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+
+import org.springframework.context.ApplicationContextInitializer;
+import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.core.annotation.AliasFor;
+
+@Target(ElementType.TYPE)
+@Retention(RetentionPolicy.RUNTIME)
+@Documented
+@Inherited
+public @interface ContextConfiguration {
+	@AliasFor("locations")
+	String[] value() default {};
+    
+	@AliasFor("value")
+	String[] locations() default {};
+	
+    Class<?>[] classes() default {};
+	
+    Class<? extends ApplicationContextInitializer<?>>[] initializers() default {};
+	
+    boolean inheritLocations() default true;
+	
+    boolean inheritInitializers() default true;
+	
+    Class<? extends ContextLoader> loader() default ContextLoader.class;
+	
+    String name() default "";
+}
+```
+
+<br/>
+
+- locations : xml 설정을 사용할 경우 읽어들이려는 xml 설정 파일이 위치한 경로들을 지정해줍니다.
+- classes : 읽어들일 Java 기반의 Bean 들의 class 타입들을 지정해줍니다.
+
+<br/>
+
+
+
+@ContextConfiguration 을 이용해서 테스트에서 사용할 컴포넌트들을 읽어들이는 방식은 3종류가 있습니다.
+
+- @SpringBootApplication 스캔
+  - @SpringBootApplication 으로 지정된 전체 애플리케이션 컴포넌트 스캔을 읽어들이는 방식
+  - 실제 객체를 사용하는 테스트 입니다.
+- @Component 선택 후 부분 스캔 
+  - 실제 코드의 원하는 Component 들만을 읽어들여서 부분적인 테스트를 수행하는 방식
+  - 실제 객체를 사용하는 테스트 입니다.
+- @TestConfiguration 스캔 
+  - 테스트 용도로 정의한 `@TestConfiguration` 기반의 설정 코드를 @ContextConfiguration 애노테이션으로 테스트 코드에 읽어들이는 방식
+  - 테스트 용도로 별도 정의한 객체를 스캔하는 방식입니다.
+  - Database 처럼 테스트의 검증 동작들이 실제 Database에 값의 변경을 가하면 안되는 환경 등에 대해 @TestConfiguration 등을 통해 별도의 가상 환경(testcontainers 등)을 정의해두기도 합니다.
+
+<br/>
+
+
+
+## @SpringBootApplication 스캔
+
+@SpringBootApplication 은 전체 애플리케이션을 ComponentScan 을 하는 애노테이션입니다. @ContextConfiguration 에는 이 @SpringBootApplication 애노테이션이 적용된 클래스를 지정해서 전체 애플리케이션의 실제 컴포넌트 들을 로드해서 테스트할 수 있습니다.<br/>
+
+이 방식을 사용하는 경우는 develop, cbt 와 같은 환경에 대해 WebTestClient, API 테스트 등 통합테스트가 필요한 일부 기능에 대한 테스트가 필요할 때 사용하는 경우가 많습니다.<br/>
+
+**@SpringBootApplication 적용 클래스**
+
+```java
+package io.chagchagchag.example.reactive_test_example;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class ReactiveTestExampleApplication {
+
+	public static void main(String[] args) {
+		SpringApplication.run(ReactiveTestExampleApplication.class, args);
+	}
+
+}
+```
+
+<br/>
+
+
+
+**HealthcheckController.java** 
+
+```java
+package io.chagchagchag.example.reactive_test_example.healthcheck;
+
+import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+import reactor.core.publisher.Mono;
+
+@RequiredArgsConstructor
+@RestController
+public class HealthcheckController {
+  private final HealthcheckService healthcheckService;
+  @GetMapping("/healthcheck/ready")
+  public Mono<String> getReady(){
+    return Mono.just(healthcheckService.ok());
+  }
+}
+```
+
+<br/>
+
+
+
+**HealthcheckService.java**
+
+```java
+package io.chagchagchag.example.reactive_test_example.healthcheck;
+
+import org.springframework.stereotype.Service;
+
+@Service
+public class HealthcheckService {
+  public String ok(){
+    return "OK";
+  }
+}
+```
+
+<br/>
+
+
+
+**테스트 코드**<br/>
+
+위의 코드들을 테스트하는 코드는 아래와 같습니다.
+
+```java
+package io.chagchagchag.example.reactive_test_example.slice_test.context_configuration.full_scan;
+
+import io.chagchagchag.example.reactive_test_example.ReactiveTestExampleApplication;
+import io.chagchagchag.example.reactive_test_example.healthcheck.HealthcheckController;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.test.context.ContextConfiguration;
+import org.springframework.test.context.junit.jupiter.SpringExtension;
+import reactor.test.StepVerifier;
+
+@ExtendWith(SpringExtension.class)
+@ContextConfiguration(classes = {ReactiveTestExampleApplication.class})
+public class ContextConfigurationTest_Full_Scan {
+
+  @Autowired
+  HealthcheckController healthcheckController;
+
+  @Test
+  public void TEST_HEALTH_CHECK_CONTROLLER_USING_FULL_SCAN(){
+    var expected = "OK";
+    StepVerifier.create(healthcheckController.getReady())
+        .expectNext(expected)
+        .verifyComplete();
+  }
+
+}
+```
+
+<br/>
+
+- @ContextConfiguration(classes = {ReactiveTestExampleApplication.class})
+  - @SpringBootApplication 애노테이션이 적용된 `ReactiveTestExampleApplication` 이라는 클래스를 @ContextConfiguration 으로 로드했습니다.
+
+<br/>
+
+
+
+## @Component 선택 후 부분 스캔
+
+
+
+
+
+
+
+## @TestConfiguration 스캔
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
