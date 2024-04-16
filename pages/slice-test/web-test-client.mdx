@@ -1,0 +1,370 @@
+## WebTestClient
+
+[WebTestClient](https://github.com/spring-projects/spring-framework/blob/main/spring-test/src/main/java/org/springframework/test/web/reactive/server/WebTestClient.java) 는 WebClient 를 Test 코드 내에서 사용할 수 있도록 스프링에서 제공하는 클래스입니다. <br/>
+
+WebTestClient 의 주요 내용을 파악할 때는 아래의 내용들을 위주로 파악하면, 쉽게 까먹지 않고 오래 기억됩니다.
+
+- WebTestClient 객체의 생성은 MockServerSpec 을 이용하고, 세부적으로는 ControllerSpec, RouterSpec 을 통해서 MockServerSpec 을 접근한다. ControllerSpec, RouterSpec 은 모두 MockServerSpec 을 extends 하는 타입이다.
+- WebTestClient 클래스 내에는 응답형태를 검증할 수 있는 ResponseSpec 타입을 제공하며 status, header, cookie, body 를 expect 구문을 통해 검증하는 것이 가능하다.
+- WebTestClient 에는 bindToController(), bindToRouterFunction(), bindToServer() 등과 같은 static 메서드를 제공한다.
+- 각 메서드는 `***Spec` 타입을 return 한다.
+  - bindToController() 메서드 : ControllerSpec 을 return 
+  - bindToRouterFunction() 메서드 : RouterFunctionSpec을 return
+  - bindToServer() 메서드 : Builder 객체를 return
+- 각각의 ControllerSpec, RouterFunctionSpec 은 WebTestClient interface 내에 정의된 내부 interface 타입이다. 
+- ControllerSpec, RouterFunctionSpec 은 모두 MockServerSpec 이라는 약간은 공통기능을 모아둔 역할을 하는 interface 를 extends (확장)하고 있다. 따라서 ControllerSpec, RouterFunctionSpec 모두 MockServerSpec 이 제공하는 메서드를 그대로 사용 가능하다.
+- MockServerSpec 역시 WebTestClient 내부의 interface 타입이다. 
+- MockServerSpec 에는 configureClient() 라고 하는 Builder 객체를 리턴하는 메서드, build() 라고 하는 WebTestClient 객체를 생성하는 메서드가 있다.
+- WebTestClient 가 HTTP 통신을 수행한 응답결과는 ResponseSpec 객체를 통해 돌려받으며 ResponseSpec 객체는 status, header, cookie, body 관련된 expect 구문들을 제공하고 있다.
+
+<br/>
+
+
+
+## 주요 메서드
+
+> 참고 : [WebTestClient](https://github.com/spring-projects/spring-framework/blob/main/spring-test/src/main/java/org/springframework/test/web/reactive/server/WebTestClient.java) 
+
+```java
+package org.springframework.test.web.reactive.server;
+// ...
+public interface WebTestClient {
+	String WEBTESTCLIENT_REQUEST_ID = "WebTestClient-Request-Id";
+	RequestHeadersUriSpec<?> get();
+	RequestHeadersUriSpec<?> head();
+	RequestBodyUriSpec post();
+	RequestBodyUriSpec put();
+	RequestBodyUriSpec patch();
+	RequestHeadersUriSpec<?> delete();
+	RequestHeadersUriSpec<?> options();
+	RequestBodyUriSpec method(HttpMethod method);
+	Builder mutate();
+	WebTestClient mutateWith(WebTestClientConfigurer configurer);
+
+
+	// Static factory methods
+	static ControllerSpec bindToController(Object... controllers) {
+		return new DefaultControllerSpec(controllers);
+	}
+
+	static RouterFunctionSpec bindToRouterFunction(RouterFunction<?> routerFunction) {
+		return new DefaultRouterFunctionSpec(routerFunction);
+	}
+
+	static MockServerSpec<?> bindToApplicationContext(ApplicationContext applicationContext) {
+		return new ApplicationContextSpec(applicationContext);
+	}
+
+	static MockServerSpec<?> bindToWebHandler(WebHandler webHandler) {
+		return new DefaultMockServerSpec(webHandler);
+	}
+
+	static Builder bindToServer() {
+		return new DefaultWebTestClientBuilder();
+	}
+
+	static Builder bindToServer(ClientHttpConnector connector) {
+		return new DefaultWebTestClientBuilder(connector);
+	}
+
+	interface MockServerSpec<B extends MockServerSpec<B>> {
+        // ...
+	}
+
+	// ... interface 타입들 정의 (중략) ...
+
+}
+```
+
+<br/>
+
+
+
+bindToController(Object... ) : ControllerSpec
+
+- controller 에 대한 WebTestClient 객체 생성
+
+bindToRouterFunction(RouterFunction) : RouterFunctionSpec
+
+- RouterFunction 에 대한 WebTestClient 객체 생성
+
+bindToApplicationContext(ApplicationContext) : MockServerSpec
+
+- ApplicationContext 내의 bean 들을 기반으로 WebTestClient 객체 생성
+
+bindToWebHandler(WebHandler) : MockServerSpec
+
+- WebHandler 에 대해 WebTestClient 객체 생성
+
+bindToServer() : Builder
+
+- Reactor Netty 애플리케이션(WAS) 에 Reactor Netty Client 로 접속하는 WebTestClient 객체 생성
+
+
+
+<br/>
+
+
+
+### `bindTo***()`
+
+`bindTo***()` 메서드는 bindToController(), bindToApplicationContext(), bindToServer() 메서드를 제공합니다.<br/>
+
+
+
+#### bindToController(Object... ) : ControllerSpec
+
+bindToController() 메서드는 ControllerSpec 객체를 return 하는 static 메서드 입니다.
+
+```java
+package org.springframework.test.web.reactive.server;
+// ...
+public interface WebTestClient {
+    // ...
+
+	// Static factory methods
+	static ControllerSpec bindToController(Object... controllers) {
+		return new DefaultControllerSpec(controllers);
+	}
+
+	// ... interface 타입들 정의 (중략) ...
+
+}
+```
+
+테스트하기를 원하는 1개 이상의 Controller 들을 bindToController 의 가변인자로 전달해주면, ControllerSpec 이라는 객체를 생성할 수 있습니다. <br/>
+
+ControllerSpec 은 MockServerSpec 이라는 객체를 확장한 타입이며, controllerAdvice, contentTypeResolver, corsMappings 등과 관련된 필드들을 주입 받을 수 있는 역할의 객체입니다. 이 ControllerSpec 은 MockSeverSpec 타입을 확장하고 있는데, MockServerSpec 의 configureClient(), build() 메서드를 통해서 최종적으로 WebTestClient 객체를 생성하는 것이 가능해집니다.<br/>
+
+MockServerSpec, ControllerSpec 타입에 대한 자세한 내용은 뒤에서도 정리하며, 이 글의 도입부에서도 정리해두었습니다.<br/>
+
+
+
+##### e.g.
+
+```java
+```
+
+<br/>
+
+
+
+#### bindToApplicationContext(ApplicationContext) : MockServerSpec
+
+bindToApplicationContext(ApplicationContext) 는 MockServerSpec 을 return 하는 static 메서드입니다.
+
+```java
+package org.springframework.test.web.reactive.server;
+// ...
+
+public interface WebTestClient {
+    // ...
+
+	// Static factory methods
+	// ...
+
+	static MockServerSpec<?> bindToApplicationContext(ApplicationContext applicationContext) {
+		return new ApplicationContextSpec(applicationContext);
+	}
+    
+    // ...
+
+	interface MockServerSpec<B extends MockServerSpec<B>> {
+        // ...
+	}
+
+	// ... interface 타입들 정의 (중략) ...
+
+}
+```
+
+<br/>
+
+
+
+bindToApplicationContext (ApplicationContext) 메서드가 반환하는 MockServerSpec 객체를 이용하면 configureClient() 메서드로 Builder 객체를 생성하고 , build() 메서드를 이용해서 WebTestClient 객체를 생성하는 것이 가능합니다. <br/>
+
+MockServerSpec, ControllerSpec 타입에 대한 자세한 내용은 뒤에서도 정리하며, 이 글의 도입부에서도 정리해두었습니다.<br/>
+
+
+
+##### e.g.
+
+```java
+```
+
+<br/>
+
+
+
+#### bindToServer(ClientHttpConnector) : Builder
+
+bindToServer(ClientHttpConnector) 는 Builder 객체를 반환합니다. 이 Builder 객체를 잘 활용하면 WebTestClient 객체를 생성하는 것 역시 가능하게 됩니다.
+
+```java
+package org.springframework.test.web.reactive.server;
+// ...
+public interface WebTestClient {
+	// ...
+
+	static Builder bindToServer(ClientHttpConnector connector) {
+		return new DefaultWebTestClientBuilder(connector);
+	}
+
+	interface MockServerSpec<B extends MockServerSpec<B>> {
+        // ...
+	}
+
+	// ... interface 타입들 정의 (중략) ...
+
+}
+```
+
+<br/>
+
+
+
+##### e.g.
+
+```java
+```
+
+<br/>
+
+
+
+## MockServerSpec
+
+> 참고 : [WebTestClient](https://github.com/spring-projects/spring-framework/blob/main/spring-test/src/main/java/org/springframework/test/web/reactive/server/WebTestClient.java) <br/>
+
+위에서 살펴본 메서드인 `bindToApplicationContext(ApplicationContext) : MockServerSpec` 은 `MockServerSpec` 타입을 반환하며, `MockServerSpec` 타입은 `WebTestClient` 내의 내부 interface 타입입니다. 
+
+WebTestClient 객체 생성을 위한 공통 기능을 제공하는 공통 interface 역할을 하며, 뒤에서 살펴볼 ControllerSpec 역시 MockServerSpec 을 extends 하는 interface 입니다.
+
+```java
+package org.springframework.test.web.reactive.server;
+// ...
+
+public interface WebTestClient {
+	// ...
+    
+	interface MockServerSpec<B extends MockServerSpec<B>> {
+		<T extends B> T webFilter(WebFilter... filter);
+		<T extends B> T webSessionManager(WebSessionManager sessionManager);
+		<T extends B> T apply(MockServerConfigurer configurer);
+		Builder configureClient();
+		WebTestClient build();
+	}
+
+	// ... interface 타입들 정의 (중략) ...
+
+}
+```
+
+MockServerSpec 은 webFilter(), webSessionManager(), apply() 등과 메서드를 통해서 WebFliter 관련 연산, WebSessionManager 관련 연산, MockServerConfigurer 관련 연산을 지원가능합니다. <br/>
+
+이 외에도 configureClient() 메서드는 `WebTestClient` 내의 Builder 객체를 반환하기에, 이 Builder 객체를 통해서 WebTestClient 내에서 필요한 객체들을 조합 가능하게 됩니다.<br/>
+
+<br/>
+
+
+
+## ControllerSpec
+
+> 참고 : [WebTestClient](https://github.com/spring-projects/spring-framework/blob/main/spring-test/src/main/java/org/springframework/test/web/reactive/server/WebTestClient.java) <br/>
+
+```java
+package org.springframework.test.web.reactive.server;
+
+// ...
+
+public interface WebTestClient {
+    
+	// ...
+    
+	interface ControllerSpec extends MockServerSpec<ControllerSpec> {
+		ControllerSpec controllerAdvice(Object... controllerAdvice);
+
+		ControllerSpec contentTypeResolver(Consumer<RequestedContentTypeResolverBuilder> consumer);
+        
+		ControllerSpec corsMappings(Consumer<CorsRegistry> consumer);
+
+		ControllerSpec pathMatching(Consumer<PathMatchConfigurer> consumer);
+
+		ControllerSpec argumentResolvers(Consumer<ArgumentResolverConfigurer> configurer);
+
+		ControllerSpec httpMessageCodecs(Consumer<ServerCodecConfigurer> configurer);
+
+		ControllerSpec formatters(Consumer<FormatterRegistry> consumer);
+
+		ControllerSpec validator(Validator validator);
+
+		ControllerSpec viewResolvers(Consumer<ViewResolverRegistry> consumer);
+
+		ControllerSpec blockingExecution(Consumer<BlockingExecutionConfigurer> consumer);
+	}
+
+	// ... interface 타입들 정의 (중략) ...
+
+}
+```
+
+<br/>
+
+- 주로 컨트롤러와 관련된 요소들인 controllerAdvice, contentTypeResolver, corsMapping, pathMatching, argumentResolvers, httpMessageCodec, viewRsolver 등과 관련된 연산 들을 제공한다는 것을 확인 가능합니다.
+- 위에서 살펴봤던 MockServerSpec 타입을 extends 하고 있기 때문에 MockServerSpec 의 메서드들을 그대로 사용 가능합니다. 예를 들면 configureClient() 메서드를 이용해서 Builder 객체를 생성하고 이 Builder 객체를 통해 필요한 필드들을 모두 설정한 후 build() 메서드를 통해 WebTestClient 객체를 생성하는 것이 가능합니다.
+
+<br/>
+
+
+
+## ResponseSpec
+
+> 참고 : [WebTestClient](https://github.com/spring-projects/spring-framework/blob/main/spring-test/src/main/java/org/springframework/test/web/reactive/server/WebTestClient.java) <br/>
+
+WebTestClient 클래스 내에는 응답형태를 검증할 수 있는 ResponseSpec 타입을 제공하며 status, header, cookie, body 를 expect 구문을 통해 검증하는 것이 가능합니다.<br/>
+
+```java
+package org.springframework.test.web.reactive.server;
+
+// ...
+
+public interface WebTestClient {
+    
+	// ...
+    
+	// ... interface 타입들 정의 (중략) ...
+
+	interface ResponseSpec {
+		ResponseSpec expectAll(ResponseSpecConsumer... consumers);
+
+		StatusAssertions expectStatus();
+		HeaderAssertions expectHeader();
+		CookieAssertions expectCookie();
+        
+		<B> BodySpec<B, ?> expectBody(Class<B> bodyType);
+		<B> BodySpec<B, ?> expectBody(ParameterizedTypeReference<B> bodyType);
+        
+		<E> ListBodySpec<E> expectBodyList(Class<E> elementType);
+		<E> ListBodySpec<E> expectBodyList(ParameterizedTypeReference<E> elementType);
+        
+		BodyContentSpec expectBody();
+        
+		<T> FluxExchangeResult<T> returnResult(Class<T> elementClass);
+		<T> FluxExchangeResult<T> returnResult(ParameterizedTypeReference<T> elementTypeRef);
+        
+		@FunctionalInterface
+		interface ResponseSpecConsumer extends Consumer<ResponseSpec> {
+		}
+
+	}
+
+}
+```
+
+
+
+## e.g.
+
+
+
