@@ -1,0 +1,250 @@
+## @DataMongoTest
+
+Data Access Layer 는 mongodb client 와 같은 데이터베이스 클라이언트를 통해서 데이터베이스라고 하는 이종의 머신과 통신을 하고 그 결과물을 데이터로 응답합니다. Data Access Layer 계층의 테스트코드에서는 MongoDB Connection 설정이 올바르게 되었는지, MongoDB 와 통신이 잘되는지 테스트 하는 것 외에도 실제 쿼리가 잘 짜여진 것인지 역시 테스트해봅니다.<br/>
+
+Data Access Layer 에 대한 테스트는 스프링에서 @DataR2dbcTest`, `@DataRedisTest`, `@DataMongoTest 애노테이션을 통해서 그 기능을 제공해주고 있습니다.<br/>
+
+이번 문서에서 살펴볼 것은 @DataMongoTest 입니다.<br/>
+
+<br/>
+
+
+
+## 참고
+
+- [flapdoodle-oss/de.flapdoodle.mebed.mongo](https://github.com/flapdoodle-oss/de.flapdoodle.embed.mongo)
+
+<br/>
+
+
+
+## Service, Repository, Entity, Factory 코드
+
+세부적인 로직들을 이곳에 모두 적기에는 글이 길어져서 링크로 대체합니다
+
+- https://github.com/chagchagchag/example-spring-reactive-test/tree/main/src/main/java/io/chagchagchag/example/reactive_test_example/mongo_book
+
+
+
+<br/>
+
+
+
+## docker-compose
+
+이번 테스트에서는 mongodb 테스트를 위해 docker-compose 를 사용합니다. 
+
+더 자세한 docker-compose 에 대한 내용은 [MongoDB Replica Set 환경 구축하기](https://seoko.me/post/3) 를 참고해주세요.
+
+```yaml
+version: '3.8'
+services:
+  mongo:
+    image: mongo:6.0.5
+    ports:
+      - 27017:27017
+    environment:
+      MONGO_INITDB_DATABASE: foobar
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: 1111
+```
+
+<br/>
+
+
+
+제 경우에는 docker-compose 를 사용하지 않고 아틀라스에 생성해둔 테스트용도의 Mongodb 를 사용했습니다.
+
+## MongoDB 접속 설정
+
+### Java 설정
+
+```java
+package io.chagchagchag.example.reactive_test_example;
+
+import com.mongodb.reactivestreams.client.MongoClient;
+import com.mongodb.reactivestreams.client.MongoClients;
+import io.chagchagchag.example.reactive_test_example.config.BigDecimalToDecimal128Converter;
+import io.chagchagchag.example.reactive_test_example.config.Decimal128ToBigDecimalConverter;
+import java.util.Arrays;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.mongo.MongoProperties;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.data.mongodb.ReactiveMongoDatabaseFactory;
+import org.springframework.data.mongodb.ReactiveMongoTransactionManager;
+import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
+import org.springframework.data.mongodb.core.SimpleReactiveMongoDatabaseFactory;
+import org.springframework.data.mongodb.core.convert.MongoConverter;
+import org.springframework.data.mongodb.core.convert.MongoCustomConversions;
+import org.springframework.data.mongodb.repository.config.EnableReactiveMongoRepositories;
+
+@EnableReactiveMongoRepositories(
+    basePackages = {
+        "io.chagchagchag.example.reactive_test_example.mongo_book.repository"
+    },
+    reactiveMongoTemplateRef = "helloworldReactiveMongoTemplate"
+)
+@TestConfiguration
+public class TestMongodbConfig {
+  @Value("${spring.data.mongodb.uri}")
+  private String mongoUri;
+
+  @Bean
+  public MongoClient reactiveMongoClient(){
+    return MongoClients.create(mongoUri);
+  }
+
+  @Bean
+  public ReactiveMongoTransactionManager transactionManager(
+      ReactiveMongoDatabaseFactory databaseFactory
+  ){
+    return new ReactiveMongoTransactionManager(databaseFactory);
+  }
+
+  @Bean(name = "helloworldReactiveMongoDatabaseFactory")
+  public SimpleReactiveMongoDatabaseFactory helloworldReactiveMongoDatabaseFactory(
+      MongoProperties mongoProperties,
+      MongoClient mongoClient
+  ){
+    final String database = "helloworld";
+    return new SimpleReactiveMongoDatabaseFactory(mongoClient, database);
+  }
+
+  @Bean(name = "helloworldReactiveMongoTemplate")
+  public ReactiveMongoTemplate helloworldReactiveMongoTemplate(
+      ReactiveMongoDatabaseFactory helloworldReactiveMongoDatabaseFactory,
+      MongoConverter mongoConverter
+  ){
+    return new ReactiveMongoTemplate(helloworldReactiveMongoDatabaseFactory, mongoConverter);
+  }
+
+  @Bean
+  public MongoCustomConversions mongoCustomConversions(){
+    return new MongoCustomConversions(
+        Arrays.asList(
+            new BigDecimalToDecimal128Converter(),
+            new Decimal128ToBigDecimalConverter()
+        )
+    );
+  }
+}
+```
+
+<br/>
+
+
+
+### src/test/resources/application-test-mongodb.yml
+
+```yaml
+spring:
+  data:
+    mongodb:
+      uri: mongodb+srv://[계정명]:[비밀번호]@[도메인]/
+```
+
+<br/>
+
+
+
+### 테스트 코드
+
+```java
+package io.chagchagchag.example.reactive_test_example.slice_test.data_mongo_test;
+
+import io.chagchagchag.example.reactive_test_example.TestMongodbConfig;
+import io.chagchagchag.example.reactive_test_example.mongo_book.BookDocumentService;
+import io.chagchagchag.example.reactive_test_example.mongo_book.repository.BookDocumentRepository;
+import io.chagchagchag.example.reactive_test_example.mongo_book.repository.BookDocumentTransactionRepository;
+import io.chagchagchag.example.reactive_test_example.mongo_book.repository.entity.BookDocument;
+import io.chagchagchag.example.reactive_test_example.mongo_book.repository.factory.BookDocumentFactory;
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.stream.Collectors;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.data.mongo.DataMongoTest;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.ContextConfiguration;
+
+@ActiveProfiles("test-mongodb")
+@ContextConfiguration(
+    classes = {
+        TestMongodbConfig.class,
+        BookDocumentService.class,
+        BookDocumentRepository.class,
+        BookDocumentTransactionRepository.class,
+        BookDocumentFactory.class,
+    }
+)
+@DataMongoTest
+public class DataMongoTest_Example1 {
+
+  private static Logger log = LoggerFactory.getLogger(DataMongoTest_Example1.class);
+
+  @Autowired
+  private BookDocumentService sut;
+
+  @DisplayName("TEST_새로운_책을_트랜잭셔널_애노테이션을_이용해_저장_및_수정")
+  @Test
+  public void TEST_새로운_책을_트랜잭셔널_애노테이션을_이용해_저장_및_수정(){
+    // given
+
+    // when
+
+    // then
+    log.info("before save");
+    List<BookDocument> result = sut.insertNewBook("맛도리 여행", BigDecimal.valueOf(3000))
+        .toStream()
+        .collect(Collectors.toList());
+    log.info("after save, result = {}", result);
+  }
+
+}
+```
+
+
+
+
+
+## Testcontainers 기반 테스트
+
+몇일 내로 정리 예정입니다. 다른 작업도 밀려있어서 잠시 스킵합니다.<br/>
+
+<br/>
+
+
+
+
+
+## embedded mongodb 테스트 
+
+docker compose 등으로 설치하는 몽고디비가 무겁다고 느낄 경우 테스트환경에서는 아래와 같이 `de.flapdoodle.embed.mongo` 를 사용가능합니다.<br/>
+
+> 개인적으로는 embedded mongodb 를 설정하느라 힘들어할 바에야 testcontainer 를 이용해서 docker-compose 으로 테스트를 진행하는 것도 나쁘지 않고 효율적이라고 생각합니다.<br/>
+
+<br/>
+
+
+
+### 의존성 추가
+
+```kotlin
+dependencies {
+    // ... 
+	testImplementation("de.flapdoodle.embed:de.flapdoodle.embed.mongo:4.12.6")
+    // ...
+}
+```
+
+<br/>
+
+
+
+### 
+
+embedded mongodb 에 관련해서는 여러가지 충돌나는 부분이 많기에 조금더 자료를 조사해본 후에 정리를 진행해보도록 하겠습니다.
