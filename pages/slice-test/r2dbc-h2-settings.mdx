@@ -1,0 +1,422 @@
+## r2dbc h2 설정
+
+Spring Boot Starter Web 에서는 h2-console을 설정하는 것 만으로 h2-console을 사용할 수 있지만, Spring Boot Starter Web 에서는 별도로 h2 서버를 코드로 구현해서 사용해야 합니다.<br/>
+
+라이브러리 역시 다른 라이브러리를 사용하게 됩니다.
+
+- Spring MVC : com.h2database:h2
+- Spring Reactive Data : io.r2dbc:r2dbc-h2
+
+<br/>
+
+
+
+## 참고자료
+
+- [Spring 비동기 처리의 이해 3(Webflux with R2DBC, 게시판 만들기)](https://tries1.github.io/spring/2020/12/02/spring_async3.html)
+- [Spring WebFlux + R2DBC 환경에서 H2 web console 사용하기](https://itvillage.tistory.com/53)
+
+
+
+<br/>
+
+
+
+## build.gradle.kts
+
+```kotlin
+dependencies {
+    // ...
+    
+	implementation("org.springframework.boot:spring-boot-starter-data-r2dbc")
+    
+    // ...
+    
+	// h2
+//	runtimeOnly("com.h2database:h2")
+	implementation("io.r2dbc:r2dbc-h2")
+
+    // ...
+}
+```
+
+<br/>
+
+
+
+## application-h2.yml
+
+테스트 코드는 h2 로 설정하고 실행시에는 spring.profiles.active = h2  로 실행되도록 실행 인자를 넘겨주는 방식으로 실행하도록 지정했습니다.
+
+```yaml
+spring:
+  config:
+    import:
+      - classpath:h2.yml
+```
+
+<br/>
+
+
+
+## h2.yml
+
+```yaml
+spring:
+  sql:
+    init:
+      schema-locations: classpath*:sql/schema.sql
+      data-locations: classpath*:sql/data.sql
+  r2dbc:
+    url: r2dbc:h2:mem:///tset;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    username: sa
+    password:
+h2:
+  console:
+    port: 8090
+```
+
+<br/>
+
+
+
+## sql
+
+src/test/resources/sql
+
+- data.sql
+- schema.sql
+
+<br/>
+
+
+
+src/test/resources/sql/schema.sql
+
+```sql
+CREATE TABLE MEMBER(
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    roles VARCHAR(255),
+    password VARCHAR(255) NOT NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL
+);
+
+CREATE TABLE AUTH (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    token VARCHAR(255) NOT NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL
+);
+```
+
+<br/>
+
+
+
+src/test/resources/sql/data.sql
+
+```sql
+-- 아직 아무 내용도 작성을 하지 않음
+```
+
+<br/>
+
+
+
+## H2ServerConfig
+
+h2 서버를 구동시키는 코드입니다.
+
+```java
+package io.chagchagchag.oauth2client.oauth2_client_example.config;
+
+import java.sql.SQLException;
+import org.h2.tools.Server;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Profile;
+import org.springframework.context.event.ContextClosedEvent;
+import org.springframework.context.event.ContextRefreshedEvent;
+import org.springframework.context.event.EventListener;
+import org.springframework.stereotype.Component;
+
+@Profile("h2")
+@Component
+public class H2ServerConfig {
+  private static final Logger logger = LoggerFactory.getLogger(H2ServerConfig.class);
+
+  @Value("${h2.console.port}")
+  private Integer port;
+  private Server h2Server;
+
+  @EventListener(ContextRefreshedEvent.class)
+  public void start() throws SQLException {
+    logger.info("start h2 console at port {}", port);
+    this.h2Server = Server.createWebServer("-webPort", port.toString());
+    this.h2Server.start();
+  }
+
+  @EventListener(ContextClosedEvent.class)
+  public void stop(){
+    logger.info("stop h2 console at port {}", port);
+    this.h2Server.stop();
+  }
+}
+```
+
+<br/>
+
+
+
+## H2R2dbcConfig - r2dbc 커넥션 설정 (ConnectionFactory, etc)
+
+```java
+package io.chagchagchag.oauth2client.oauth2_client_example.config;
+
+import io.r2dbc.h2.H2ConnectionConfiguration;
+import io.r2dbc.h2.H2ConnectionFactory;
+import io.r2dbc.h2.H2ConnectionOption;
+import io.r2dbc.spi.ConnectionFactory;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
+import org.springframework.data.r2dbc.config.AbstractR2dbcConfiguration;
+import org.springframework.data.r2dbc.repository.config.EnableR2dbcRepositories;
+import org.springframework.r2dbc.connection.init.ConnectionFactoryInitializer;
+
+@Profile("h2")
+@EnableR2dbcRepositories
+@Configuration
+public class H2R2dbcConfig extends AbstractR2dbcConfiguration {
+
+  @Override
+  public ConnectionFactory connectionFactory() {
+    return new H2ConnectionFactory(
+        H2ConnectionConfiguration.builder()
+            .inMemory("test")
+            .property(H2ConnectionOption.DB_CLOSE_DELAY, "-1")
+            .username("sa")
+            .build()
+    );
+  }
+
+  @Bean
+  public ConnectionFactoryInitializer h2DbInitializer(){
+    ConnectionFactoryInitializer initializer = new ConnectionFactoryInitializer();
+//    ResourceDatabasePopulator resourceDatabasePopulator = new ResourceDatabasePopulator();
+//    resourceDatabasePopulator.addScript(new ClassPathResource("/sql/schema.sql"));
+//    resourceDatabasePopulator.addScript(new ClassPathResource("/sql/data.sql"));
+//    initializer.setDatabasePopulator(resourceDatabasePopulator);
+    initializer.setConnectionFactory(connectionFactory());
+    return initializer;
+  }
+
+}
+```
+
+<br/>
+
+
+
+## 테스트 구동
+
+아래의 contextLoads 메서드를 `spring.profiles.active` = `h2` 로 실행시켜시면 됩니다.
+
+```java
+package io.chagchagchag.oauth2client.oauth2_client_example;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
+
+@ActiveProfiles({"h2"})
+@SpringBootTest
+class Oauth2ClientExampleApplicationTests {
+
+	@Test
+	void contextLoads() {
+	}
+
+}
+```
+
+<br/>
+
+
+
+## 간단한 테스트
+
+### MemberEntity
+
+```java
+package io.chagchagchag.oauth2client.oauth2_client_example.member.entity;
+
+import java.time.LocalDateTime;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.annotation.PersistenceCreator;
+import org.springframework.data.relational.core.mapping.Table;
+
+@Getter
+@Table("MEMBER")
+@AllArgsConstructor(staticName = "ofAll")
+public class MemberEntity {
+  @Id
+  private Long id;
+
+  private String name;
+  private String email;
+  private String roles;
+
+  @CreatedDate
+  private LocalDateTime createdAt;
+
+  @LastModifiedDate
+  private LocalDateTime updatedAt;
+
+  @PersistenceCreator
+  public MemberEntity(
+      Long id, String name, String email, String roles
+  ){
+    this.id = id;
+    this.name = name;
+    this.email = email;
+    this.roles = roles;
+  }
+
+  @Builder(builderClassName = "CreateUserBuilder", builderMethodName = "createBuilder")
+  public MemberEntity(
+      String name, String email, String roles
+  ){
+    this(null, name, email, roles);
+  }
+
+}
+```
+
+<br/>
+
+
+
+### MemberEntityFactory
+
+```java
+package io.chagchagchag.oauth2client.oauth2_client_example.member.entity.factory;
+
+import io.chagchagchag.oauth2client.oauth2_client_example.member.entity.MemberEntity;
+import io.chagchagchag.oauth2client.oauth2_client_example.member.security.MemberRoles;
+import org.springframework.stereotype.Component;
+
+@Component
+public class MemberEntityFactory {
+  public MemberEntity ofCreateRoleMember(
+      String name, String email
+  ){
+    MemberRoles userRole = MemberRoles.ROLE_USER;
+    return MemberEntity.createBuilder()
+        .name(name)
+        .email(email)
+        .roles(userRole.getRoleName())
+        .build();
+  }
+}
+```
+
+<br/>
+
+
+
+### MemberR2dbcCommandRepository
+
+```java
+package io.chagchagchag.oauth2client.oauth2_client_example.member.entity.repository;
+
+import io.chagchagchag.oauth2client.oauth2_client_example.member.entity.MemberEntity;
+import org.springframework.data.repository.reactive.ReactiveCrudRepository;
+
+public interface MemberR2dbcCommandRepository extends ReactiveCrudRepository<MemberEntity, Long> {
+
+}
+```
+
+<br/>
+
+
+
+### MemberR2dbcSearchRepository
+
+```java
+package io.chagchagchag.oauth2client.oauth2_client_example.member.entity.repository;
+
+import io.chagchagchag.oauth2client.oauth2_client_example.member.entity.MemberEntity;
+import org.springframework.data.repository.reactive.ReactiveSortingRepository;
+import reactor.core.publisher.Mono;
+
+public interface MemberR2dbcSearchRepository extends ReactiveSortingRepository<MemberEntity, Long> {
+  Mono<MemberEntity> findMemberEntityByEmail(String email);
+}
+```
+
+<br/>
+
+
+
+### @DataR2dbcTest 테스트 코드
+
+```java
+package io.chagchagchag.oauth2client.oauth2_client_example.member;
+
+import io.chagchagchag.oauth2client.oauth2_client_example.config.H2R2dbcConfig;
+import io.chagchagchag.oauth2client.oauth2_client_example.member.entity.MemberEntity;
+import io.chagchagchag.oauth2client.oauth2_client_example.member.entity.factory.MemberEntityFactory;
+import io.chagchagchag.oauth2client.oauth2_client_example.member.entity.repository.MemberR2dbcCommandRepository;
+import io.chagchagchag.oauth2client.oauth2_client_example.member.entity.repository.MemberR2dbcSearchRepository;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.data.r2dbc.DataR2dbcTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.test.context.ActiveProfiles;
+import reactor.core.publisher.Mono;
+import reactor.test.StepVerifier;
+
+@ActiveProfiles({"h2"})
+@Import(H2R2dbcConfig.class)
+@DataR2dbcTest
+public class MemberEntityRepositoryH2Test {
+  @Autowired
+  private MemberR2dbcSearchRepository memberR2DbcSearchRepository;
+  @Autowired
+  private MemberR2dbcCommandRepository memberR2dbcCommandRepository;
+  private MemberEntityFactory memberEntityFactory;
+
+  @Test
+  public void TEST_MEMBER_INSERT(){
+    memberEntityFactory = new MemberEntityFactory();
+
+    // given
+    MemberEntity member = memberEntityFactory.ofCreateRoleMember("제시린가드", "abc@gmail.com");
+
+    // when
+    Mono<MemberEntity> saved = memberR2dbcCommandRepository.save(member)
+        .flatMap(memberEntity -> memberR2DbcSearchRepository.findMemberEntityByEmail(member.getEmail()));
+
+    // then
+    StepVerifier.create(saved)
+        .expectNextMatches(memberEntity -> memberEntity.getEmail().equals(member.getEmail()));
+  }
+}
+```
+
+
+
+
+

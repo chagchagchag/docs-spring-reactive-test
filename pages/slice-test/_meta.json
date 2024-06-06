@@ -5,5 +5,6 @@
     "web-flux-test": "@WebFluxTest",
     "web-test-client": "WebTestClient 로 API 검증",
     "data-r2dbc-test": "@DataR2dbcTest",
+    "r2dbc-h2-settings": "R2dbc H2 설정",
     "data-mongo-test": "@DataMongoTest"
 }
